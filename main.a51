@@ -1,69 +1,122 @@
-ORG 00H
-LJMP MAIN
-;-----interrup0_to_increase_speed--------------------------------------------------
-    ORG 0003H
-      CJNE A,#10,increase_speed
-        AJMP max_SPEED
-      increase_speed:
-	 INC A
-	 DEC B
-      max_SPEED:
-    RETI
-;----interrupt1_to_decrease_speed--------------------------------------------
-    ORG 0013H
-      CJNE A,#0,decrease_speed
-       AJMP MINIMUM_SPEED
-      decrease_speed:
-           DEC A
-           INC B
-      MINIMUM_SPEED:
-    RETI
-;-----timer_interrupt1_p2.0_for_emergency_stop-------------------------------------------
-     ORG 001BH
-      JNB P1.1,FINISH
-        AJMP NULL
-      FINISH:
-	 SETB P1.0
-	 JNB P1.1,FINISH
-      NULL:
-     RETI
-;-----MAIN_PROGRAME--------------------------------------------------------------------------
-   ORG 30H
-    MAIN:
-      MOV A,#0
-      MOV B,#10
-      SETB TCON.0
-      SETB TCON.2
-      MOV IE,#10001101B
-      MOV TMOD,#00100001B
-      MOV TH1,#0F0H
-      SETB TR1
-;-----MAIN_LOOP--------------------------------------------------------------------------
-     HERE: 
-	    CJNE A,#0,ON
-	    AJMP HERE
-        ON:
-	CLR P1.0
-	    MOV R0,A
-	     L1: LCALL DELAY
-	    DJNZ R0,L1
-	  CJNE A,#10,L2
-	   AJMP ON
-	  L2: JC complete
-	 complete:
-	 SETB P1.0
-	    MOV R0,B
-	     L4: LCALL DELAY
-	    DJNZ R0,L4 
-      LJMP HERE
-;-----TIMER0_DELAY--------------------------------------------------------------------------
-      DELAY: 
-	    MOV TL0,#33H
-	    MOV TH0,#0FFH
-	 SETB TR0
-	 TARGET: JNB TF0,TARGET
-	 CLR TR0
-	 CLR TF0
-      RET
+ORG 0000H
+  JMP SETUP
 
+ORG 000BH  
+  ACALL TIMER_INTR
+  RETI
+
+ORG 0003H
+  CJNE R1,#00H,INTR0_OUT
+    RETI
+  INTR0_OUT:
+    DEC R1
+    RETI
+
+ORG 0013H
+  CJNE R1,#09H,INTR1_OUT
+    RETI
+  INTR1_OUT:
+    INC R1
+    RETI
+
+ORG 0100H
+SETUP:
+  MOV TCON, #05H    ; ENABLE TIMER,EX1,EX0 INTERRUPTS
+  MOV R0,#00H       ; PWM COUNTER [0:9]
+  MOV R1,#00H       ; PWM["0"] WIDTH
+  MOV P3, #0FFH     ; INPUT
+  MOV P1, #00H      ; OUTPUT
+  MOV P0, #00H      ; OUTPUT
+  MOV TMOD, #02H    
+  MOV TH0, #0CEH    ; AFTER CALCULATING THIS IS THE VALUE TO MAKE 2KH 10 CYCLE FREQUENCY
+  MOV IE, #87H
+  SETB TR0          ; START TIMER
+     
+
+LOOP:
+    ACALL DECODER
+    JMP LOOP
+  
+TIMER_INTR:         ; ARG(R1) -> WIDTH OF "0" OUT OF 10 RANGES FROM R1(0:9)
+  JNB P3.0, SET_OUT
+  MOV A, R0
+  CJNE R0, #09H, ELSE_0
+    CLR P1.0
+    MOV R0, #00H
+    JMP OUT
+
+  ELSE_0:
+    MOV B, R1
+    CJNE A, B, ELSE_1
+      SETB P1.0
+    ELSE_1:
+      INC R0
+
+  OUT:
+    RETI
+  SET_OUT:
+    SETB P1.0
+    MOV P2,#00H
+    MOV P0,#00H
+    RETI
+
+DECODER:
+  JNB P3.0, OUT_DECODER
+    CJNE R1,#00H, NOT_ZERO
+      MOV P2,#02H
+      MOV P0,#00H
+      JMP OUT_DECODER
+    NOT_ZERO:
+      CJNE R1,#01H, NOT_ONE
+        MOV P2,#03H
+        MOV P0,#00H
+      JMP OUT_DECODER
+
+    NOT_ONE:
+      CJNE R1,#02H, NOT_TWO
+        MOV P2,#03H
+        MOV P0,#10000000B
+      JMP OUT_DECODER
+
+    NOT_TWO:
+      CJNE R1,#03H, NOT_THREE
+        MOV P2,#03H
+        MOV P0,#11000000B
+      JMP OUT_DECODER
+
+    NOT_THREE:
+      CJNE R1,#04H, NOT_FOUR
+        MOV P2,#03H
+        MOV P0,#11100000B
+      JMP OUT_DECODER
+
+    NOT_FOUR:
+      CJNE R1,#05H, NOT_FIVE
+        MOV P2,#03H
+        MOV P0,#11110000B
+      JMP OUT_DECODER
+
+    NOT_FIVE:
+      CJNE R1,#06H, NOT_SIX
+        MOV P2,#03H
+        MOV P0,#11111000B
+      JMP OUT_DECODER
+
+    NOT_SIX:
+      CJNE R1,#07H, NOT_SEVEN
+        MOV P2,#03H
+        MOV P0,#11111100B
+      JMP OUT_DECODER
+
+    NOT_SEVEN:
+      CJNE R1,#08H, NOT_EIGHT
+        MOV P2,#03H
+        MOV P0,#11111110B
+      JMP OUT_DECODER
+
+    NOT_EIGHT:
+        MOV P2,#03H
+        MOV P0,#11111111B
+    OUT_DECODER:
+      RET
 END
